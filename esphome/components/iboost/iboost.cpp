@@ -401,12 +401,8 @@ namespace esphome {
                         hp += 3;
                     }
                     *hp = 0;
-                    Serial.print("SENDER_RAW import_w=");
-                    Serial.print(p1 / 360);
-                    Serial.print(" len=");
-                    Serial.print(pkt_size);
-                    Serial.print(" bytes=");
-                    Serial.println(hexbuf);
+                    ESP_LOGI(TAG, "SENDER_RAW import_w=%ld len=%d bytes=%s",
+                             (long)(p1 / 360), pkt_size, hexbuf);
                 }
                 rxState = RXSTATE_WAIT_FOR_PACKET; // no update so wait for a new packet
                 break;
