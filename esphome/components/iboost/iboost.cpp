@@ -82,11 +82,16 @@ namespace esphome {
         uint32_t rxTimer;
 
         //static uint8_t txStart[] = {CC1101_SIDLE, CC1101_TXFIFO, CC1101_AGCCTRL0};
-        uint8_t txBuf[32];
+        uint8_t txBuf[64];
         uint8_t request;
         bool boostRequest;
+        // When true, every received SENDER (0x01) packet is immediately echoed
+        // back with all-zero ADC samples so the iBoost main unit's most-recent
+        // "current at meter" reading is zero and it stops diverting. Toggled
+        // from HA via switch.iboost_inhibit.
+        bool inhibitActive = false;
         uint8_t address[2]; // this is the address of the sender
-        uint8_t addressLQI, rxLQI; // signal strength test 
+        uint8_t addressLQI, rxLQI; // signal strength test
         bool addressValid;
 
         byte packet[MAX_PACKET_LEN];
@@ -189,6 +194,11 @@ namespace esphome {
         void iBoost::boost(uint8_t boost_time) {
             boostTime = boost_time;
             boostRequest = true;
+        }
+
+        void iBoost::set_inhibit(bool v) {
+            inhibitActive = v;
+            ESP_LOGI(TAG, "Inhibit %s", v ? "ENABLED — will spoof zero-magnitude SENDER packets" : "disabled");
         }
 
         void iBoost::update() {
@@ -403,6 +413,31 @@ namespace esphome {
                     *hp = 0;
                     ESP_LOGI(TAG, "SENDER_RAW import_w=%ld len=%d bytes=%s",
                              (long)(p1 / 360), pkt_size, hexbuf);
+
+                    // Override path: race the iBoost main unit by transmitting
+                    // an identical-address SENDER packet with all-zero ADC
+                    // samples. iBoost takes the most recent SENDER reading,
+                    // so this drops perceived meter current to ~0 and stops
+                    // diversion. Battery-low flag is preserved.
+                    if (inhibitActive) {
+                        memset(txBuf, 0, sizeof(txBuf));
+                        txBuf[1] = packet[0];
+                        txBuf[2] = packet[1];
+                        txBuf[3] = PACKET_SENDER;
+                        txBuf[4] = packet[3] & SENDER_FLAG_BATTERY_LOW;
+                        // txBuf[5..44] left at zero (no current samples)
+                        radio.strobe(CC1101_SIDLE);
+                        radio.writeRegister(CC1101_TXFIFO, 0x2c); // length 44
+                        radio.writeBurstRegister(CC1101_TXFIFO, txBuf + 1, 44);
+                        radio.strobe(CC1101_STX);
+                        delay(5);
+                        radio.strobe(CC1101_SWOR);
+                        delay(5);
+                        radio.strobe(CC1101_SFRX);
+                        radio.strobe(CC1101_SIDLE);
+                        radio.strobe(CC1101_SRX);
+                        ESP_LOGI(TAG, "INHIBIT: zero-magnitude SENDER spoofed");
+                    }
                 }
                 rxState = RXSTATE_WAIT_FOR_PACKET; // no update so wait for a new packet
                 break;
