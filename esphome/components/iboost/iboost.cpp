@@ -388,7 +388,25 @@ namespace esphome {
                     // Battery low flag is bit 1 of SENDER packet byte[3]
                     static const uint8_t SENDER_FLAG_BATTERY_LOW = 0x02;
 
-                    batteryLow = (packet[3] & SENDER_FLAG_BATTERY_LOW) != 0;   
+                    batteryLow = (packet[3] & SENDER_FLAG_BATTERY_LOW) != 0;
+
+                    // Reverse-engineering aid: dump the full SENDER packet as hex
+                    // with the most-recent iBoost-reported import value so byte
+                    // offsets that hold the power reading can be identified by
+                    // correlating across known load steps (kettle, battery export).
+                    char hexbuf[3 * 44 + 1];
+                    char *hp = hexbuf;
+                    for (int i = 0; i < pkt_size && i < 44; i++) {
+                        sprintf(hp, "%02x ", packet[i]);
+                        hp += 3;
+                    }
+                    *hp = 0;
+                    Serial.print("SENDER_RAW import_w=");
+                    Serial.print(p1 / 360);
+                    Serial.print(" len=");
+                    Serial.print(pkt_size);
+                    Serial.print(" bytes=");
+                    Serial.println(hexbuf);
                 }
                 rxState = RXSTATE_WAIT_FOR_PACKET; // no update so wait for a new packet
                 break;
